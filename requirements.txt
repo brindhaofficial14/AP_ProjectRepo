@@ -1,0 +1,15 @@
+# core
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.5.1
+joblib==1.4.2
+
+# local LLM (CPU via llama.cpp bindings)
+llama-cpp-python==0.2.90
+
+# metrics / viz (optional)
+matplotlib==3.8.4
+tqdm==4.66.4
+
+# dataset convenience (optional for scripted download)
+datasets==2.20.0
