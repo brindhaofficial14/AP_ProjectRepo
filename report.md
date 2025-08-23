@@ -1,7 +1,7 @@
 
 ---
 
-# 📄 report.md (2–3 pages starter)
+# 📄 report.md 
 
 ```md
 # Prompt Safety Agent — Analysis Report
