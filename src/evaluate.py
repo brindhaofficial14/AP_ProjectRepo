@@ -5,10 +5,16 @@ from joblib import load
 from .agent import PromptSafetyAgent
 from .baseline import predict_baseline
 
-def eval_all(test_csv: str, model_path: str, out_jsonl: str = "eval_outputs.jsonl", n_limit: int | None = None):
+def eval_all(test_csv: str, model_path: str, out_jsonl: str = "eval_outputs.jsonl", n_limit: int | None = None, use_rag: bool = False, rag_dir: str = "rag_index"):
     df = pd.read_csv(test_csv)
     if n_limit: df = df.head(n_limit)
-    agent = PromptSafetyAgent(model_path=model_path)
+
+    rag = None
+    if use_rag:
+        from .rag import RAGIndex
+        rag = RAGIndex(persist_dir=rag_dir)
+
+    agent = PromptSafetyAgent(model_path=model_path, rag=rag, rag_k=3)
     rows, pred_b, pred_a, y_true = [], [], [], []
 
     t0 = time.time()

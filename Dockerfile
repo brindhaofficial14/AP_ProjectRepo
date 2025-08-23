@@ -16,4 +16,6 @@ COPY report.md .
 
 # default: CLI entry — accept a prompt from CMD
 ENV PYTHONPATH=/app
-CMD ["python", "-m", "src.cli"]
+# NEW:
+ENTRYPOINT ["python", "-m", "src.cli"]
+CMD []
