@@ -73,7 +73,8 @@ def system_prompt(version: str = "v2") -> str:
 
 # simple keyword sets for rule fallback
 UNSAFE_KEYWORDS = [
-    "ignore previous", "developer mode", "DAN", "jailbreak", "system prompt",
-    "bypass safety", "disable safety", "act as", "pretend you are", "unfiltered",
-    "no restrictions", "leak", "hidden instructions", "override", "prompt injection"
+    "ignore previous", "ignore safety", "ignore safety rules", "developer mode", "dev mode",
+    "dan", "jailbreak", "system prompt", "bypass safety", "disable safety", "disable guardrails",
+    "bypass guardrails", "act as", "pretend you are", "unfiltered", "no restrictions",
+    "no rules", "leak", "hidden instructions", "override", "prompt injection"
 ]

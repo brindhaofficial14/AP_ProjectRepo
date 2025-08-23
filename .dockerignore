@@ -1,0 +1,11 @@
+.git
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+.venv/
+.env
+models/         # we will MOUNT models at runtime
+data/           # we will MOUNT data at runtime
+notebooks/
