@@ -2,11 +2,8 @@
 
 prompt-safety-agent/
 ├─ src/
-|
 │ ├─ agent.py # LLM-powered classifier (JSON output, fallbacks)
-|
 │ ├─ prompts.py # System/user prompt templates + few-shot
-|
 │ ├─ utils.py # JSON parsing, rules, confidence calibration
 │ ├─ evaluate.py # Eval scripts (metrics, JSONL outputs)
 │ ├─ rag.py # (Optional) RAG index + retrieval
