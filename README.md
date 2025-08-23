@@ -1,3 +1,25 @@
+## Project structure
+
+prompt-safety-agent/
+├─ src/
+│ ├─ agent.py # LLM-powered classifier (JSON output, fallbacks)
+│ ├─ prompts.py # System/user prompt templates + few-shot
+│ ├─ utils.py # JSON parsing, rules, confidence calibration
+│ ├─ evaluate.py # Eval scripts (metrics, JSONL outputs)
+│ ├─ rag.py # (Optional) RAG index + retrieval
+│ ├─ cli.py # CLI entrypoint
+│ └─ model_resolver.py # Maps aliases (phi2/stablelm3b/llama2/mistral) → GGUF path
+├─ data/ # Datasets (train/test CSVs)
+│ └─ README.md # How to download/use the dataset
+├─ models/
+│ └─ gguf/ # Local GGUF model files (not tracked)
+│ └─ README.md # Model choices & filenames
+├─ notebooks/ # (Optional) EDA notebooks
+├─ Dockerfile # Container image
+├─ requirements.txt # Python deps
+├─ report.md # Analysis & findings
+└─ README.md # This file
+
 # Prompt Safety Agent
 
 Local, explainable classifier for prompt-injection detection. Includes:
