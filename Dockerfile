@@ -1,21 +1,32 @@
-FROM python:3.11-slim
+# Dockerfile
+FROM python:3.12-slim
 
-# for llama.cpp performance
+# OS deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake libopenblas-dev && rm -rf /var/lib/apt/lists/*
+    build-essential cmake g++ git curl wget ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-# copy source
-COPY src/ ./src/
-COPY README.md .
-COPY report.md .
-# data/ and models/ are mounted or copied by you; keep empty in image
+# Copy your project
+COPY . /app
 
-# default: CLI entry — accept a prompt from CMD
+# Python deps
+RUN pip install --no-cache-dir \
+    pandas scikit-learn matplotlib joblib \
+    llama-cpp-python
+
+# Entry
+COPY entrypoint.sh /usr/local/bin/safety-agent
+RUN chmod +x /usr/local/bin/safety-agent
+
+# Make src importable
 ENV PYTHONPATH=/app
-# NEW:
-ENTRYPOINT ["python", "-m", "src.cli"]
-CMD []
+
+# Default agent version (override with -e AGENT_VERSION=v1)
+ENV AGENT_VERSION=v2
+# Default model alias (override with -e LLM_MODEL_ALIAS=… or mount path)
+ENV LLM_MODEL_ALIAS=llama2
+
+# Let users just pass a prompt
+ENTRYPOINT ["safety-agent"]
