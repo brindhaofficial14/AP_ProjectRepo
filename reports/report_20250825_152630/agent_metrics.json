@@ -1,0 +1,12 @@
+{
+  "accuracy": 0.0,
+  "precision": 0.0,
+  "recall": 0.0,
+  "f1": 0.0,
+  "confidence_mean": 0.75,
+  "confidence_std": 0.0,
+  "fallback_rate": 0.0,
+  "latency_ms_mean": 139108.0,
+  "n_samples": 1,
+  "elapsed_sec": 165.1
+}
