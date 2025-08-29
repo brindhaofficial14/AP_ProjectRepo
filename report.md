@@ -1,11 +1,9 @@
+# report.md 
 # Prompt Safety Agent — Analysis Report
 
 > This document summarizes the approach, design choices, evaluation highlights, and ablation insights for a fully local, explainable prompt‑injection detector. It integrates a linear baseline, an on‑device 7B chat model, interpretable rules, and an optional RAG layer, with rich reporting artifacts for auditability.
 
----
-
 # Project Structure
-
 ```text
 prompt-safety-agent/
 ├─ src/
