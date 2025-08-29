@@ -44,6 +44,7 @@ class PromptSafetyAgent:
         self.rephraser = Rephraser(self.llm)
         self.use_fallback = use_fallback
 
+    LLMError = ""
     def _call_llm(self, prompt: str, original_text: str) -> Dict[str, Any]:
         # chat-style with system + few-shot
         messages = [{"role": "system", "content": system_prompt(self.version)}]

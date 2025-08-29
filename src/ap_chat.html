@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Llama-2 Chat (Local)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 24px; max-width: 900px; }
+  #log { border: 1px solid #ddd; border-radius: 12px; padding: 16px; height: 60vh; overflow:auto; white-space: pre-wrap; }
+  .bubble { margin: 10px 0; padding: 10px 14px; border-radius: 12px; }
+  .user { background:#eef; align-self:flex-end; }
+  .assistant { background:#f6f6f6; }
+  .row { display:flex; gap:8px; margin-top:12px; }
+  textarea { width:100%; height:80px; }
+  button { padding:10px 14px; border-radius:10px; border:1px solid #ccc; cursor:pointer; }
+  .meta { color:#555; font-size:12px; margin-bottom:8px; }
+</style>
+</head>
+<body>
+  <h1>Chat with Llama-2 (local)</h1>
+  <div class="meta">Backend: <code>http://localhost:8000/v1/chat/completions</code></div>
+  <div id="log"></div>
+  <div class="row">
+    <textarea id="input" placeholder="Ask me anything…"></textarea>
+    <div style="display:flex; flex-direction:column; gap:8px; width:140px;">
+      <button id="send">Send</button>
+      <button id="clear">Clear</button>
+    </div>
+  </div>
+
+<script>
+const API_BASE = "http://localhost:8000/v1";
+const log = document.getElementById('log');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('send');
+const clearBtn = document.getElementById('clear');
+
+// Keep an in-memory conversation
+const messages = [
+  { role: "system", content: "You are a helpful assistant." }
+];
+
+function appendBubble(role, text) {
+  const div = document.createElement('div');
+  div.className = `bubble ${role === 'user' ? 'user' : 'assistant'}`;
+  div.textContent = text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  return div;
+}
+
+async function streamChat(userText) {
+  // 1) add user message
+  messages.push({ role: "user", content: userText });
+  appendBubble('user', userText);
+
+  // 2) prepare assistant bubble to fill incrementally
+  const assistantDiv = appendBubble('assistant', '');
+
+  // 3) call local server with streaming
+  const body = {
+    model: "local-llama-2-7b-chat-q4km",
+    messages,
+    temperature: 0.6,
+    top_p: 0.95,
+    stream: true,
+    stop: ["</s>"]
+  };
+
+  const res = await fetch(`${API_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      // If you started server with an API key, include:
+      // "Authorization": "Bearer sk-anything"
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok || !res.body) {
+    assistantDiv.textContent = `Error: ${res.status} ${res.statusText}`;
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") {
+          // finalize assistant message into conversation
+          messages.push({ role: "assistant", content: assistantDiv.textContent });
+          break;
+        }
+        try {
+          const json = JSON.parse(data);
+          const delta = json?.choices?.[0]?.delta?.content ?? "";
+          if (delta) {
+            assistantDiv.textContent += delta;
+            log.scrollTop = log.scrollHeight;
+          }
+        } catch (e) {
+          // ignore partial JSON errors while streaming
+        }
+      }
+    }
+  } catch (err) {
+    assistantDiv.textContent += `\n[stream error: ${err}]`;
+  }
+}
+
+sendBtn.onclick = () => {
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  streamChat(text);
+};
+clearBtn.onclick = () => {
+  log.innerHTML = "";
+  messages.length = 0;
+  messages.push({ role: "system", content: "You are a helpful assistant." });
+};
+</script>
+</body>
+</html>

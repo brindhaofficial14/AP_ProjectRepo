@@ -1,5 +1,5 @@
 # src/evaluate_v3.py
-import json, time, base64, io, math, sys, platform
+import json, time, base64, io, math
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -19,13 +19,6 @@ from sklearn.metrics import (
 from collections import Counter
 
 from .agent_v3 import PromptSafetyAgent
-
-# Optional Excel streaming
-try:
-    from openpyxl import Workbook, load_workbook
-    _HAS_OPENPYXL = True
-except Exception:
-    _HAS_OPENPYXL = False
 
 Json = Dict[str, Any]
 
@@ -68,22 +61,21 @@ def _pick_interesting_cases(df: pd.DataFrame, k: int = 20) -> pd.DataFrame:
         if col not in df.columns:
             df[col] = np.nan
 
-    # >>> FIX: fillna to avoid NaN propagation in boolean masks
     cond = (
-        (df["baseline_label"].fillna(-1) != df["llm_label"].fillna(-1))
-        | (df["final_label"].fillna(-1) != df["true_label"].fillna(-1))
-        | (df["final_confidence"].fillna(1.0) < 0.55)
-        | (df["fallback_used"].fillna(False))
+        (df["baseline_label"] != df["llm_label"])
+        | (df["final_label"] != df["true_label"])
+        | (df["final_confidence"] < 0.55)
+        | (df["fallback_used"])
     )
     out = df.loc[cond].copy()
     if out.empty:
         return out
 
     out["rank"] = (
-        (out["baseline_label"].fillna(-1) != out["llm_label"].fillna(-1)).astype(int) * 3
-        + (out["final_label"].fillna(-1) != out["true_label"].fillna(-1)).astype(int) * 4
-        + (out["fallback_used"].fillna(False)).astype(int) * 2
-        + (0.55 - out["final_confidence"].fillna(1.0)).clip(lower=0)
+        (out["baseline_label"] != out["llm_label"]).astype(int) * 3
+        + (out["final_label"] != out["true_label"]).astype(int) * 4
+        + (out["fallback_used"]).astype(int) * 2
+        + (0.55 - out["final_confidence"]).clip(lower=0)
     )
     out = out.sort_values("rank", ascending=False).head(k)
 
@@ -110,9 +102,11 @@ def _fig_to_base64(fig) -> str:
 
 def _plot_confusion(y_true: List[int], y_pred: List[int], title: str) -> str:
     if not y_true:
+        # Empty figure if no data
         fig = plt.figure()
         plt.title(title + " (no data)")
         return _fig_to_base64(fig)
+
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -141,6 +135,12 @@ def _plot_pie(true_count: int, false_count: int, title: str) -> str:
     return _fig_to_base64(fig)
 
 def _json_safe(o):
+    """
+    Make objects JSON-spec safe:
+      - convert NaN/Inf to None
+      - cast numpy scalars to Python types
+      - recursively clean dicts/lists
+    """
     if isinstance(o, dict):
         return {k: _json_safe(v) for k, v in o.items()}
     if isinstance(o, list):
@@ -152,11 +152,12 @@ def _json_safe(o):
         return None if (math.isnan(v) or math.isinf(v)) else v
     if isinstance(o, float):
         return None if (math.isnan(o) or math.isinf(o)) else o
-    if o is np.nan:
+    if o is np.nan:  # rarely hit due to above
         return None
     return o
 
 def _fmt_stage_line(name: str, op: Optional[Dict[str, Any]]) -> str:
+    """Produce a compact, uniform one-liner per stage, matching console format."""
     if not op:
         return ""
     try:
@@ -258,14 +259,10 @@ def eval_all(
     ragflag: bool = True,
     rag_k: int = 3,
     baseline_model_dir: Optional[str] = None,
-    checkpoint_every: int = 5,        # >>> CHECKPOINT: flush every N rows
-    stream_excel: bool = True,        # >>> CHECKPOINT: create/update per-row Excel (per_example_stream.xlsx)
 ) -> Dict[str, Any]:
     """
     Evaluate on test.csv and produce a timestamped report folder with:
-      - eval_outputs.jsonl (streamed per example)
-      - per_example.csv (streamed per example)
-      - per_example_stream.xlsx (optional streaming Excel; per_example sheet only)
+      - eval_outputs.jsonl (full per-example details)
       - report.xlsx (multi-sheet: config, metrics_summary, per_example, interesting_cases, text_info, stage_logs)
       - report.html (tables + plots)
     """
@@ -277,8 +274,6 @@ def eval_all(
 
     report_dir = _mk_report_dir(report_base_dir)
     jsonl_path = report_dir / "eval_outputs.jsonl"
-    per_example_csv_path = report_dir / "per_example.csv"            # >>> CHECKPOINT
-    stream_xlsx_path = report_dir / "per_example_stream.xlsx"        # >>> CHECKPOINT
     xlsx_path = report_dir / "report.xlsx"
     html_path = report_dir / "report.html"
 
@@ -289,26 +284,8 @@ def eval_all(
         baseline_model_dir=baseline_model_dir,
     )
 
-    # JSONL open for streaming
-    jf = jsonl_path.open("w", encoding="utf-8")                      # >>> CHECKPOINT
-    csv_header_written = per_example_csv_path.exists()               # >>> CHECKPOINT
-
-    # Excel streaming (per_example only) using openpyxl
-    if stream_excel and _HAS_OPENPYXL:                               # >>> CHECKPOINT
-        if stream_xlsx_path.exists():
-            wb = load_workbook(stream_xlsx_path)
-            ws = wb["per_example"] if "per_example" in wb.sheetnames else wb.active
-        else:
-            wb = Workbook(write_only=False)
-            ws = wb.active
-            ws.title = "per_example"
-            # header will be added after first record (we need keys) -> handled in-loop
-            wb.save(stream_xlsx_path)
-    else:
-        wb = ws = None
-
     rows: List[Json] = []
-    stage_rows: List[Dict[str, Any]] = []
+    stage_rows: List[Dict[str, Any]] = []  # NEW: for stage_logs sheet
     y_true: List[int] = []
     y_base: List[int] = []
     y_llm: List[int] = []
@@ -318,10 +295,11 @@ def eval_all(
     latencies: List[int] = []
 
     t0 = time.time()
-    for idx, r in df.iterrows():
+    for _, r in df.iterrows():
         text = str(r["text"])
         true_label = int(r["label"])
 
+        # ---- Robust method calls (keep eval going even if one fails) ----
         try:
             base_op = agent.ClassifyUsingAlg(text)
         except Exception as e:
@@ -381,7 +359,7 @@ def eval_all(
             detail_ops.update({"rag": rag_op, "rules": rules_op, "rephrase": reph_op})
             used_fallback = True
 
-        # Majority vote across collected methods
+        # ---- Majority vote across collected methods ----
         methods = list(detail_ops.keys())
         labels = [int(detail_ops[m].get("label", 0)) for m in methods]
         counts = Counter(labels)
@@ -406,16 +384,19 @@ def eval_all(
             "text": text,
             "true_label": int(true_label),
 
+            # Baseline
             "baseline_label": int(base_op.get("label", 0)),
             "baseline_score": float(base_op.get("score", 0.5)),
             "baseline_confidence": float(base_op.get("confidence", 0.5)),
             "baseline_explanation": str(base_op.get("explanation", "")),
 
+            # LLM
             "llm_label": int(llm_op.get("label", 0)),
             "llm_score": float(llm_op.get("score", 0.5)),
             "llm_confidence": float(llm_op.get("confidence", 0.5)),
             "llm_explanation": str(llm_op.get("explanation", "")),
 
+            # Optional branches (None = not triggered)
             "rag_label": int(detail_ops.get("rag", {}).get("label")) if "rag" in detail_ops else None,
             "rag_score": float(detail_ops.get("rag", {}).get("score")) if "rag" in detail_ops else None,
             "rag_confidence": float(detail_ops.get("rag", {}).get("confidence")) if "rag" in detail_ops else None,
@@ -428,6 +409,7 @@ def eval_all(
             "rephrase_score": float(detail_ops.get("rephrase", {}).get("score")) if "rephrase" in detail_ops else None,
             "rephrase_confidence": float(detail_ops.get("rephrase", {}).get("confidence")) if "rephrase" in detail_ops else None,
 
+            # Final
             "final_label": int(majority),
             "final_score": float(final_score),
             "final_confidence": float(final_conf),
@@ -437,10 +419,10 @@ def eval_all(
             "fallback_used": bool(used_fallback),
             "latency_ms": int(latency_ms),
 
+            # Full detail for JSONL (kept spec-safe later)
             "ops_detail": detail_ops,
         }
 
-        # Append to in-memory lists for final reports
         rows.append(record)
         y_true.append(int(true_label))
         y_base.append(int(base_op.get("label", 0)))
@@ -450,7 +432,7 @@ def eval_all(
         fallbacks.append(bool(used_fallback))
         latencies.append(int(latency_ms))
 
-        # ---------- Stage logs row ----------
+        # ---------- Stage logs row (human-readable, one column per method) ----------
         line_baseline = _fmt_stage_line("Baseline", base_op)
         line_llm      = _fmt_stage_line("LLM", llm_op)
         line_rag      = _fmt_stage_line("RAG", detail_ops.get("rag"))
@@ -477,31 +459,12 @@ def eval_all(
             "FINAL": line_final,
         })
 
-        # ---------------- CHECKPOINTS (stream to disk) ----------------
-        # JSONL (per row)
-        jf.write(json.dumps(_json_safe(record), ensure_ascii=False, allow_nan=False) + "\n")
-        if (idx + 1) % checkpoint_every == 0:
-            jf.flush()
-
-        # CSV (per row)
-        # Drop ops_detail to keep CSV light
-        row_for_csv = {k: v for k, v in record.items() if k != "ops_detail"}
-        tmp_df = pd.DataFrame([_json_safe(row_for_csv)])
-        tmp_df.to_csv(per_example_csv_path, mode="a", index=False, header=not csv_header_written)
-        csv_header_written = True
-
-        # Excel streaming (per-example sheet only)
-        if stream_excel and _HAS_OPENPYXL:
-            # write header on first write
-            if ws.max_row == 1 and ws.max_column == 1 and ws["A1"].value is None:
-                ws.append(list(row_for_csv.keys()))
-            ws.append(list(row_for_csv.values()))
-            wb.save(stream_xlsx_path)  # ensure data persisted every row
-
-    # close JSONL handle
-    jf.close()
-
     wall_time = round(time.time() - t0, 2)
+
+    # ---------------- JSONL (spec-safe) ----------------
+    with jsonl_path.open("w", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps(_json_safe(r), ensure_ascii=False, allow_nan=False) + "\n")
 
     # ---------------- Metrics ----------------
     base_metrics = _metrics_binary(y_true, y_base)
@@ -544,15 +507,13 @@ def eval_all(
         "n_limit": int(n_limit) if n_limit else None,
         "report_dir": str(report_dir.resolve()),
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        # >>> FIX: clearer version info
-        "env": {
-            "python": sys.version.split()[0],
-            "platform": platform.platform(),
-            "numpy": getattr(np, "__version__", "unknown")
+        "python": {
+            "version": f"{np.__version__=}".split('=')[1] if hasattr(np, "__version__") else "unknown"
         }
     }
     df_config = pd.DataFrame(list(config.items()), columns=["key", "value"])
 
+    # JSON details (truncated for Excel cells)
     df_textinfo = pd.DataFrame(
         {
             "text": [r["text"] for r in rows],
@@ -561,26 +522,14 @@ def eval_all(
     )
 
     # ---------------- Excel (multi-sheet) ----------------
-    # Try xlsxwriter, fall back to openpyxl
-    engine = "xlsxwriter"
-    try:
-        with pd.ExcelWriter(xlsx_path, engine=engine) as xw:
-            df_config.to_excel(xw, index=False, sheet_name="config")
-            df_summary.to_excel(xw, index=False, sheet_name="metrics_summary")
-            df_examples.to_excel(xw, index=False, sheet_name="per_example")
-            if not df_cases.empty:
-                df_cases.to_excel(xw, index=False, sheet_name="interesting_cases")
-            df_textinfo.to_excel(xw, index=False, sheet_name="text_info")
-            df_stagelogs.to_excel(xw, index=False, sheet_name="stage_logs")
-    except Exception:
-        with pd.ExcelWriter(xlsx_path, engine="openpyxl") as xw:
-            df_config.to_excel(xw, index=False, sheet_name="config")
-            df_summary.to_excel(xw, index=False, sheet_name="metrics_summary")
-            df_examples.to_excel(xw, index=False, sheet_name="per_example")
-            if not df_cases.empty:
-                df_cases.to_excel(xw, index=False, sheet_name="interesting_cases")
-            df_textinfo.to_excel(xw, index=False, sheet_name="text_info")
-            df_stagelogs.to_excel(xw, index=False, sheet_name="stage_logs")
+    with pd.ExcelWriter(xlsx_path, engine="xlsxwriter") as xw:
+        df_config.to_excel(xw, index=False, sheet_name="config")
+        df_summary.to_excel(xw, index=False, sheet_name="metrics_summary")
+        df_examples.to_excel(xw, index=False, sheet_name="per_example")
+        if not df_cases.empty:
+            df_cases.to_excel(xw, index=False, sheet_name="interesting_cases")
+        df_textinfo.to_excel(xw, index=False, sheet_name="text_info")
+        df_stagelogs.to_excel(xw, index=False, sheet_name="stage_logs")  # NEW
 
     # ---------------- HTML ----------------
     _write_html(
@@ -609,6 +558,7 @@ def eval_all(
             "text","true_label","baseline_label","baseline_score","llm_label","llm_score",
             "final_label","final_score","final_confidence","fallback_used","final_explanation","insight"
         ]),
+        # Build plot series directly from rows to avoid scope/name issues
         y_true=[int(r["true_label"]) for r in rows],
         y_base=[int(r["baseline_label"]) for r in rows],
         y_final=[int(r["final_label"]) for r in rows],
@@ -630,9 +580,6 @@ def eval_all(
         "avg_latency_ms": avg_latency_ms,
         "num_examples": len(rows),
         "wall_time_sec": wall_time,
-        # Checkpoint artifacts
-        "per_example_csv": str(per_example_csv_path),
-        "per_example_stream_xlsx": str(stream_xlsx_path) if stream_excel and _HAS_OPENPYXL else None,
     }
 
     print("\n=== EVALUATION SUMMARY ===")
@@ -651,8 +598,6 @@ if __name__ == "__main__":
     ap.add_argument("--ragflag", action="store_true", help="Enable RAG during evaluation")
     ap.add_argument("--rag_k", type=int, default=3, help="Top-K neighbors for RAG")
     ap.add_argument("--baseline_model_dir", default=None, help="Directory for baseline artifacts (TF-IDF, LR, etc.)")
-    ap.add_argument("--checkpoint_every", type=int, default=5, help="Flush writers every N rows")
-    ap.add_argument("--no_stream_excel", action="store_true", help="Disable per-row Excel streaming")
     args = ap.parse_args()
 
     eval_all(
@@ -663,6 +608,4 @@ if __name__ == "__main__":
         ragflag=bool(args.ragflag),
         rag_k=int(args.rag_k),
         baseline_model_dir=args.baseline_model_dir,
-        checkpoint_every=int(args.checkpoint_every),
-        stream_excel=not args.no_stream_excel,
     )

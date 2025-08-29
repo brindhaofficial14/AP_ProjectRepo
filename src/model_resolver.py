@@ -3,7 +3,7 @@ import os  # filesystem, env
 
 # Map friendly aliases → filenames you've placed in models/gguf/
 MODEL_REGISTRY = {
-    "mistral":      "mistral-7b-instruct-v0.2.Q4_K_M.gguf",  # Mistral 7B Instruct
+    #"mistral":      "mistral-7b-instruct-v0.2.Q4_K_M.gguf",  # Mistral 7B Instruct
     "llama2":       "llama-2-7b-chat.Q4_K_M.gguf",           # Llama-2 7B Chat
     "phi2":         "phi-2.Q4_K_M.gguf",                     # Phi-2 2.7B
     "stablelm3b":   "stablelm-zephyr-3b.Q4_K_M.gguf",        # StableLM Zephyr 3B
