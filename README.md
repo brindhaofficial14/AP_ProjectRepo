@@ -25,8 +25,8 @@ prompt-safety-agent/
 │  ├─ rephraser.py          # Prompt paraphrasing (LLM with regex fallback) for robustness
 │  ├─ baseline.py           # TF-IDF + Logistic Regression baseline (train/predict)
 │  └─ model_resolver.py     # Maps aliases (phi2/stablelm3b/llama2/mistral) → GGUF path
-├─ safety_agent_chat.py     # Desktop UI for the Prompt Safety Agent (run full pipeline)
-├─ llama2_chat.py           # Lightweight desktop chat UI for a local GGUF model
+│  └─  safety_agent_chat.py # Desktop UI for the Prompt Safety Agent (run full pipeline)
+│  └─ llama2_chat.py        # Lightweight desktop chat UI for a local GGUF model
 ├─ data/                    # Datasets (train/test CSVs)
 │  └─ README.md             # How to download/use the dataset
 ├─ models/
