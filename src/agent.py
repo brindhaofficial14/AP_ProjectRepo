@@ -272,7 +272,7 @@ class PromptSafetyAgent:
                 text,
                 primary=primary,
             )
-
+        
         # --- No fallback needed: finalize primary cleanly ---
         final = dict(primary)
         # Ensure intent summary is present

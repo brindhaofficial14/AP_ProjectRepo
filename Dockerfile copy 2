@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1
+FROM python:3.12-slim
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# llama-cpp-python needs a toolchain; scientific stack benefits from build tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake wget git && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ---- Python deps (use your existing requirements.txt) ----
+COPY requirements.txt /app/requirements.txt
+RUN python -m pip install --upgrade pip wheel setuptools && \
+    pip install --no-cache-dir -r /app/requirements.txt
+
+# ---- Project code & assets ----
+COPY src /app/src
+COPY models /app/models
+COPY data /app/data
+
+# Ensure src is a package (in case __init__.py missing)
+RUN python - <<'PY'\nimport pathlib; pathlib.Path('src/__init__.py').touch()\nPY
+
+# ---- Runtime defaults (tunable via -e) ----
+ENV MODEL_PATH=/app/models/gguf/model.gguf \
+    BASELINE_DIR=/app/models/baseline \
+    PROMPT_VERSION=v4 \
+    CHAT_FORMAT=mistral-instruct \
+    RAGFLAG=false \
+    RAG_MODE=fallback \
+    RAG_ALPHA=0.6 \
+    N_CTX=4096 \
+    N_THREADS=0 \
+    N_GPU_LAYERS=0 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+# Optional: download the model at build time instead of COPY.
+# Uncomment and pass --build-arg MODEL_URL=... if you prefer.
+# ARG MODEL_URL
+# RUN if [ -n "$MODEL_URL" ]; then \
+#       mkdir -p /app/models/gguf && \
+#       wget -O /app/models/gguf/model.gguf "$MODEL_URL"; \
+#     fi
+
+# Single-argument CLI: `docker run safety-agent "text"`
+ENTRYPOINT ["python", "-m", "src.cli_v3"]

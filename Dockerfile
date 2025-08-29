@@ -1,32 +1,51 @@
-# Dockerfile
-FROM python:3.12-slim
+# ---- Base: slim Python with build toolchain for llama-cpp and chromadb ----
+FROM python:3.11-slim
 
-# OS deps
+ENV DEBIAN_FRONTEND=noninteractive
+
+# System deps for building llama-cpp-python (CPU + OpenBLAS) and common libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake g++ git curl wget ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+    build-essential cmake python3-dev git curl \
+    libopenblas-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Speed up CPU inference by linking against OpenBLAS at build time
+ENV LLAMA_BLAS=1
+ENV LLAMA_BLAS_VENDOR=OpenBLAS
+# (Optional) tweak threading defaults at runtime
+ENV OMP_NUM_THREADS=4
+ENV N_THREADS=4
+ENV N_CTX=4096
+ENV N_GPU_LAYERS=0
+ENV PROMPT_VERSION=v4
+ENV CHAT_FORMAT=llama-2
+ENV BASELINE_DIR=models/baseline
+# resolves via src/model_resolver.py to models/gguf/llama-2-7b-chat.Q4_K_M.gguf
+ENV LLM_MODEL=llama2  
 
 WORKDIR /app
 
-# Copy your project
-COPY . /app
+# Copy only requirement list first (layer caching)
+COPY requirements.txt /app/requirements.txt
 
-# Python deps
-RUN pip install --no-cache-dir \
-    pandas scikit-learn matplotlib joblib \
-    llama-cpp-python
+# Install Python deps
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Entry
-COPY entrypoint.sh /usr/local/bin/safety-agent
-RUN chmod +x /usr/local/bin/safety-agent
+# Copy project code
+COPY src/ /app/src/
 
-# Make src importable
-ENV PYTHONPATH=/app
 
-# Default agent version (override with -e AGENT_VERSION=v1)
-ENV AGENT_VERSION=v2
-# Default model alias (override with -e LLM_MODEL_ALIAS=… or mount path)
-ENV LLM_MODEL_ALIAS=llama2
+# Create optional dirs in the image (always succeeds)
+RUN mkdir -p /app/data /app/rag_index /app/models/gguf /app/models/baseline
 
-# Let users just pass a prompt
-ENTRYPOINT ["safety-agent"]
+COPY models/ /app/models/
+COPY rag_index/ /app/rag_index/
+COPY data/      /app/data/
+
+# Ensure model and baseline exist (you provide them before build)
+# - Expected: models/gguf/<your>.gguf
+# - Optional: models/baseline/tfidf.joblib (baseline; if missing, agent falls back safely)
+
+# Default to CLI entrypoint so `docker run safety-agent "..."` just works
+ENTRYPOINT ["python", "-m", "src.cli"]
+CMD ["Is this prompt safe?"]
