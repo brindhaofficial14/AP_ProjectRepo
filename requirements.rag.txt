@@ -1,0 +1,5 @@
+# RAG extras (CPU-only torch)
+torch==2.3.1+cpu ; platform_system == "Linux"
+sentence-transformers==3.0.1
+chromadb==0.5.3
+faiss-cpu==1.8.0.post1

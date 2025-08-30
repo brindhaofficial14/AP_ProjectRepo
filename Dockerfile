@@ -1,51 +1,55 @@
-# ---- Base: slim Python with build toolchain for llama-cpp and chromadb ----
+# syntax=docker/dockerfile:1.6
+
 FROM python:3.11-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
+# --- sane defaults & faster pip ---
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DEFAULT_TIMEOUT=180 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# System deps for building llama-cpp-python (CPU + OpenBLAS) and common libs
+# Minimal system deps (add libgomp1 for OpenMP used by llama.cpp)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake python3-dev git curl \
-    libopenblas-dev \
+    build-essential cmake git curl libgomp1 \
     && rm -rf /var/lib/apt/lists/*
-
-# Speed up CPU inference by linking against OpenBLAS at build time
-ENV LLAMA_BLAS=1
-ENV LLAMA_BLAS_VENDOR=OpenBLAS
-# (Optional) tweak threading defaults at runtime
-ENV OMP_NUM_THREADS=4
-ENV N_THREADS=4
-ENV N_CTX=4096
-ENV N_GPU_LAYERS=0
-ENV PROMPT_VERSION=v4
-ENV CHAT_FORMAT=llama-2
-ENV BASELINE_DIR=models/baseline
-# resolves via src/model_resolver.py to models/gguf/llama-2-7b-chat.Q4_K_M.gguf
-ENV LLM_MODEL=llama2  
 
 WORKDIR /app
 
-# Copy only requirement list first (layer caching)
+# --- install deps (core only, CPU/glibc wheels) ---
 COPY requirements.txt /app/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip wheel setuptools && \
+    # prefer manylinux wheels (glibc); fall back to normal if any pure wheel missing
+    pip install --only-binary=:all: -r /app/requirements.txt || \
+    pip install -r /app/requirements.txt
 
-# Install Python deps
-RUN pip install --no-cache-dir -r /app/requirements.txt
+# --- OPTIONAL: RAG layer (CPU-only Torch) ---
+# Build with:  --build-arg WITH_RAG=1
+ARG WITH_RAG=0
+COPY requirements.rag.txt /app/requirements.rag.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    if [ "$WITH_RAG" = "1" ]; then \
+      pip install --upgrade pip && \
+      pip install --prefer-binary \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        -r /app/requirements.rag.txt ; \
+    fi
 
-# Copy project code
+# --- project code (GUIs are inside src/) ---
 COPY src/ /app/src/
 
+# Create expected directories (models mounted at runtime)
+RUN mkdir -p /app/data /app/models/gguf /app/models/baseline /app/rag_index
 
-# Create optional dirs in the image (always succeeds)
-RUN mkdir -p /app/data /app/rag_index /app/models/gguf /app/models/baseline
+# If you want to bake assets into the image, uncomment these:
+# COPY models/gguf/ /app/models/gguf/
+# COPY models/baseline/ /app/models/baseline/
+# COPY rag_index/ /app/rag_index/
+# COPY data/ /app/data/
 
-COPY models/ /app/models/
-COPY rag_index/ /app/rag_index/
-COPY data/      /app/data/
+# Defaults for the agent (override with -e at runtime)
+ENV CHAT_FORMAT=llama-2 \
+    PROMPT_VERSION=v4
 
-# Ensure model and baseline exist (you provide them before build)
-# - Expected: models/gguf/<your>.gguf
-# - Optional: models/baseline/tfidf.joblib (baseline; if missing, agent falls back safely)
-
-# Default to CLI entrypoint so `docker run safety-agent "..."` just works
+# ---- Runtime: CLI entrypoint ----
 ENTRYPOINT ["python", "-m", "src.cli"]
-CMD ["Is this prompt safe?"]
