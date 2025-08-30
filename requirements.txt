@@ -17,12 +17,7 @@ xlsxwriter>=3.1.0
 
 # dataset convenience (optional)
 datasets==2.20.0
-huggingface_hub==0.24.6
-
-# RAG / embeddings
-sentence-transformers==3.0.1
-chromadb==0.5.3
-faiss-cpu==1.8.0.post1
+#huggingface_hub==0.24.6
 
 # desktop UI
 customtkinter>=5.2

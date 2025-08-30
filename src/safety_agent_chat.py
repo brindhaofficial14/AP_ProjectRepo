@@ -243,8 +243,8 @@ class App(ctk.CTk):
         ctk.CTkButton(path_row, text="Browse", width=70, command=self.browse_model).grid(row=0, column=1)
 
         ctk.CTkLabel(side, text="Version").grid(sticky="ew", padx=12, pady=(6,4))
-        self.version_var = ctk.StringVar(value="v4")
-        self.version_menu = ctk.CTkOptionMenu(side, values=["v2","v3","v4","v5"], variable=self.version_var)
+        self.version_var = ctk.StringVar(value="v2")
+        self.version_menu = ctk.CTkOptionMenu(side, values=["v2","v3","v4"], variable=self.version_var)
         self.version_menu.grid(sticky="ew", padx=12, pady=(0,8))
 
         # Numeric params grid
